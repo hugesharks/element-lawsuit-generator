@@ -115,11 +115,11 @@ class ContentExtractor:
         for line in lines:
             # 检测段落切换
             new_section = None
-            if line in ('原告', '被告', '第三人', '委托诉讼代理人'):
+            if line in ('原告', '被告', '第三人', '答辩人', '自诉人', '被告人', '赔偿请求人', '申请人', '委托诉讼代理人', '诉讼代理人', '辩护人', '委托代理人', '赔偿义务机关'):
                 new_section = line
-            elif line == '（自然人）' and current_section in ('原告', '被告', '第三人'):
+            elif line == '（自然人）' and current_section in ('原告', '被告', '第三人', '答辩人', '自诉人', '被告人', '赔偿请求人', '申请人'):
                 new_section = f'{current_section}_natural'
-            elif line == '（法人、非法人组织）' and current_section in ('原告', '被告', '第三人'):
+            elif line == '（法人、非法人组织）' and current_section in ('原告', '被告', '第三人', '答辩人', '申请人', '赔偿请求人'):
                 new_section = f'{current_section}_legal'
             elif line.startswith('诉讼请求') or line.startswith('事实与理由'):
                 new_section = 'end'
@@ -135,7 +135,7 @@ class ContentExtractor:
         
         # 从各段落提取信息
         # 原告自然人
-        plaintiff_lines = sections.get('原告_natural', sections.get('原告', []))
+        plaintiff_lines = (sections.get('原告_natural', []) or sections.get('答辩人_natural', []) or sections.get('自诉人_natural', []) or sections.get('自诉人', []) or sections.get('申请人_natural', []) or sections.get('申请人', []) or sections.get('赔偿请求人_natural', []) or sections.get('原告', []))
         if plaintiff_lines:
             parties['plaintiff'] = self._parse_person_lines(plaintiff_lines, 'natural')
             parties['plaintiff']['type'] = 'natural'
@@ -147,7 +147,7 @@ class ContentExtractor:
             parties['plaintiff']['type'] = 'legal'
         
         # 被告自然人
-        defendant_lines = sections.get('被告_natural', sections.get('被告', []))
+        defendant_lines = (sections.get('被告_natural', []) or sections.get('被告人_natural', []) or sections.get('被告人', []) or sections.get('被告', []))
         if defendant_lines:
             parties['defendant'] = self._parse_person_lines(defendant_lines, 'natural')
             parties['defendant']['type'] = 'natural'

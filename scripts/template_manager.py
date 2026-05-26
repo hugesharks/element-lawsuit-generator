@@ -119,8 +119,26 @@ class TemplateManager:
             if success and os.path.exists(cached_path):
                 return cached_path
         
-        # 4. 尝试不带分类目录直接下载（兼容旧结构）
-        # 留作备用
+        # 4. 模糊匹配：遍历本地模板目录，找doc_type开头且案由关键词匹配的模板
+        if self.local_template_dir and os.path.isdir(self.local_template_dir):
+            candidates = []
+            for f in os.listdir(self.local_template_dir):
+                if not f.endswith('.docx') or f.endswith('-实例.docx'):
+                    continue
+                if not f.startswith(doc_type):
+                    continue
+                # 检查案由关键词是否出现在文件名中
+                for kw in case_type:
+                    if kw in f:
+                        candidates.append(f)
+                        break
+            if candidates:
+                # 优先选择文件名包含完整案由的
+                for c in candidates:
+                    if case_type in c:
+                        return os.path.join(self.local_template_dir, c)
+                # 没有精确匹配，取第一个候选
+                return os.path.join(self.local_template_dir, candidates[0])
         
         return None
 

@@ -119,10 +119,7 @@ class ElementLawsuitGenerator:
 
     def _build_fill_data(self, extracted: Dict, case_type: str, doc_type: str) -> Dict:
         """
-        构建区域化填充数据
-        
-        使用 section_fills 结构，每个 section 对应模板中的一个段落区域
-        这样可以精确控制字段填充的位置，避免跨区域误填
+        构建区域化填充数据 - 根据文书类型动态映射区域
         """
         fill_data = {
             'section_fills': [],
@@ -133,139 +130,170 @@ class ElementLawsuitGenerator:
         parties = extracted.get('parties', {})
         signature = extracted.get('signature', {})
         
-        # === 原告自然人区域 ===
-        plaintiff = parties.get('plaintiff', {})
-        if plaintiff and plaintiff.get('type') == 'natural':
+        # 根据文书类型确定区域映射
+        DOC_TYPE_CONFIG = {
+            '民事起诉状': {
+                'party1_section': '原告', 'party1_key': 'plaintiff',
+                'party2_section': '被告', 'party2_key': 'defendant',
+                'request_section': '诉讼请求', 'reason_section': '事实与理由',
+                'signature_label': '具状人', 'agent_section': '委托诉讼代理人',
+            },
+            '民事答辩状': {
+                'party1_section': '答辩人', 'party1_key': 'plaintiff',
+                'party2_section': None, 'party2_key': None,
+                'request_section': '答辩事项', 'reason_section': '事实与理由',
+                'signature_label': '答辩人', 'agent_section': '委托诉讼代理人',
+            },
+            '刑事自诉状': {
+                'party1_section': '自诉人', 'party1_key': 'plaintiff',
+                'party2_section': '被告人', 'party2_key': 'defendant',
+                'request_section': '诉讼请求', 'reason_section': '事实与理由',
+                'signature_label': '具状人', 'agent_section': '诉讼代理人',
+            },
+            '行政起诉状': {
+                'party1_section': '原告', 'party1_key': 'plaintiff',
+                'party2_section': '被告', 'party2_key': 'defendant',
+                'request_section': '诉讼请求', 'reason_section': '事实与理由',
+                'signature_label': '具状人', 'agent_section': '委托诉讼代理人',
+            },
+            '国家赔偿申请书': {
+                'party1_section': '赔偿请求人', 'party1_key': 'plaintiff',
+                'party2_section': '赔偿义务机关', 'party2_key': 'defendant',
+                'request_section': '赔偿请求', 'reason_section': '事实与理由',
+                'signature_label': '赔偿请求人', 'agent_section': '委托代理人',
+            },
+            '刑事自诉答辩状': {
+                'party1_section': '答辩人', 'party1_key': 'plaintiff',
+                'party2_section': None, 'party2_key': None,
+                'request_section': '答辩意见', 'reason_section': None,
+                'signature_label': '答辩人', 'agent_section': '辩护人',
+            },
+            '行政答辩状': {
+                'party1_section': '答辩人', 'party1_key': 'plaintiff',
+                'party2_section': None, 'party2_key': None,
+                'request_section': '答辩事项', 'reason_section': None,
+                'signature_label': '答辩人', 'agent_section': '委托诉讼代理人',
+            },
+            '国家赔偿答辩状': {
+                'party1_section': '答辩人', 'party1_key': 'plaintiff',
+                'party2_section': None, 'party2_key': None,
+                'request_section': '答辩意见', 'reason_section': None,
+                'signature_label': '答辩人', 'agent_section': '委托诉讼代理人',
+            },
+            '第三人意见陈述书': {
+                'party1_section': '第三人', 'party1_key': 'plaintiff',
+                'party2_section': None, 'party2_key': None,
+                'request_section': '诉讼请求', 'reason_section': '事实与理由',
+                'signature_label': '陈述人', 'agent_section': '委托诉讼代理人',
+            },
+        }
+        
+        config = DOC_TYPE_CONFIG.get(doc_type, DOC_TYPE_CONFIG['民事起诉状'])
+        
+        # 通用自然人字段
+        NATURAL_PERSON_FIELDS = [
+            ('name', '姓名：'), ('birthdate', '出生日期：'), ('ethnicity', '民族：'),
+            ('work_unit', '工作单位：'), ('position', '职务：'), ('phone', '联系电话：'),
+            ('address', '住所地（户籍所在地）：'), ('residence', '经常居住地：'),
+            ('id_type', '证件类型：'), ('id_number', '证件号码：'),
+        ]
+        
+        # 通用法人字段
+        LEGAL_PERSON_FIELDS = [
+            ('name', '名称：'), ('address', '住所地（主要办事机构所在地）：'),
+            ('legal_person', '法定代表人 / 负责人：'), ('phone', '联系电话：'),
+            ('credit_code', '统一社会信用代码：'),
+        ]
+        
+        # === 当事人1区域 ===
+        party1 = parties.get(config['party1_key'], {})
+        if party1 and party1.get('type') == 'natural':
             fields = {}
-            
-            if plaintiff.get('name'):
-                fields['姓名：'] = plaintiff['name']
-            if plaintiff.get('birthdate'):
-                fields['出生日期：'] = plaintiff['birthdate']
-            if plaintiff.get('ethnicity'):
-                fields['民族：'] = plaintiff['ethnicity']
-            if plaintiff.get('work_unit'):
-                fields['工作单位：'] = plaintiff['work_unit']
-            if plaintiff.get('position'):
-                fields['职务：'] = plaintiff['position']
-            if plaintiff.get('phone'):
-                fields['联系电话：'] = plaintiff['phone']
-            if plaintiff.get('address'):
-                fields['住所地（户籍所在地）：'] = plaintiff['address']
-            if plaintiff.get('residence'):
-                fields['经常居住地：'] = plaintiff['residence']
-            if plaintiff.get('id_type'):
-                fields['证件类型：'] = plaintiff['id_type']
-            if plaintiff.get('id_number'):
-                fields['证件号码：'] = plaintiff['id_number']
-            
+            for key, label in NATURAL_PERSON_FIELDS:
+                if party1.get(key):
+                    fields[label] = party1[key]
             fill_data['section_fills'].append({
-                'section': '原告_自然人',
+                'section': f'{config["party1_section"]}_自然人',
                 'fields': fields,
-                'checkboxes': {},  # 勾选框统一用checkbox_ops处理
+                'checkboxes': {},
             })
-            
-            # 原告性别勾选框 - 使用精确的checkbox_ops
-            gender = plaintiff.get('gender', '')
+            # 性别勾选框
+            gender = party1.get('gender', '')
             if gender:
                 fill_data['checkbox_ops'].append({
-                    'section': '原告_自然人',
+                    'section': f'{config["party1_section"]}_自然人',
                     'paragraph_contains': '性别',
                     'before_checkbox': gender,
                     'check': True,
                 })
-        
-        # === 原告法人区域 ===
-        if plaintiff and plaintiff.get('type') == 'legal':
+        elif party1 and party1.get('type') == 'legal':
             fields = {}
-            if plaintiff.get('name'):
-                fields['名称：'] = plaintiff['name']
-            if plaintiff.get('address'):
-                fields['住所地（主要办事机构所在地）：'] = plaintiff['address']
-            if plaintiff.get('legal_person'):
-                fields['法定代表人 / 负责人：'] = plaintiff['legal_person']
-            if plaintiff.get('phone'):
-                fields['联系电话：'] = plaintiff['phone']
-            if plaintiff.get('credit_code'):
-                fields['统一社会信用代码：'] = plaintiff['credit_code']
-            
+            for key, label in LEGAL_PERSON_FIELDS:
+                if party1.get(key):
+                    fields[label] = party1[key]
             fill_data['section_fills'].append({
-                'section': '原告_法人',
+                'section': f'{config["party1_section"]}_法人',
                 'fields': fields,
                 'checkboxes': {},
             })
         
-        # === 被告自然人区域 ===
-        defendant = parties.get('defendant', {})
-        if defendant and defendant.get('type') == 'natural':
-            fields = {}
-            
-            if defendant.get('name'):
-                fields['姓名：'] = defendant['name']
-            if defendant.get('phone'):
-                fields['联系电话：'] = defendant['phone']
-            if defendant.get('address'):
-                fields['住所地（户籍所在地）：'] = defendant['address']
-            if defendant.get('residence'):
-                fields['经常居住地：'] = defendant['residence']
-            if defendant.get('id_number'):
-                fields['证件号码：'] = defendant['id_number']
-            if defendant.get('ethnicity'):
-                fields['民族：'] = defendant['ethnicity']
-            if defendant.get('work_unit'):
-                fields['工作单位：'] = defendant['work_unit']
-            if defendant.get('position'):
-                fields['职务：'] = defendant['position']
-            if defendant.get('id_type'):
-                fields['证件类型：'] = defendant['id_type']
-            if defendant.get('birthdate'):
-                fields['出生日期：'] = defendant['birthdate']
-            
-            fill_data['section_fills'].append({
-                'section': '被告_自然人',
-                'fields': fields,
-                'checkboxes': {},
-            })
-            
-            # 被告性别勾选框
-            gender = defendant.get('gender', '')
-            if gender:
-                fill_data['checkbox_ops'].append({
-                    'section': '被告_自然人',
-                    'paragraph_contains': '性别',
-                    'before_checkbox': gender,
-                    'check': True,
+        # === 当事人2区域 ===
+        if config.get('party2_section') and config.get('party2_key'):
+            party2 = parties.get(config['party2_key'], {})
+            if party2 and party2.get('type') == 'natural':
+                fields = {}
+                for key, label in NATURAL_PERSON_FIELDS:
+                    if party2.get(key):
+                        fields[label] = party2[key]
+                fill_data['section_fills'].append({
+                    'section': f'{config["party2_section"]}_自然人',
+                    'fields': fields,
+                    'checkboxes': {},
+                })
+                gender = party2.get('gender', '')
+                if gender:
+                    fill_data['checkbox_ops'].append({
+                        'section': f'{config["party2_section"]}_自然人',
+                        'paragraph_contains': '性别',
+                        'before_checkbox': gender,
+                        'check': True,
+                    })
+            elif party2 and party2.get('type') == 'legal':
+                fields = {}
+                for key, label in LEGAL_PERSON_FIELDS:
+                    if party2.get(key):
+                        fields[label] = party2[key]
+                fill_data['section_fills'].append({
+                    'section': f'{config["party2_section"]}_法人',
+                    'fields': fields,
+                    'checkboxes': {},
+                })
+            elif party2 and party2.get('type') == 'organ':
+                # 赔偿义务机关等
+                fields = {}
+                if party2.get('name'):
+                    fields['名称：'] = party2['name']
+                if party2.get('address'):
+                    fields['住所地：'] = party2['address']
+                if party2.get('legal_person'):
+                    fields['法定代表人 / 负责人：'] = party2['legal_person']
+                if party2.get('phone'):
+                    fields['联系电话：'] = party2['phone']
+                fill_data['section_fills'].append({
+                    'section': config['party2_section'],
+                    'fields': fields,
+                    'checkboxes': {},
                 })
         
-        # === 被告法人区域 ===
-        if defendant and defendant.get('type') == 'legal':
-            fields = {}
-            if defendant.get('name'):
-                fields['名称：'] = defendant['name']
-            if defendant.get('address'):
-                fields['住所地（主要办事机构所在地）：'] = defendant['address']
-            if defendant.get('phone'):
-                fields['联系电话：'] = defendant['phone']
-            if defendant.get('credit_code'):
-                fields['统一社会信用代码：'] = defendant['credit_code']
-            
-            fill_data['section_fills'].append({
-                'section': '被告_法人',
-                'fields': fields,
-                'checkboxes': {},
-            })
-        
-        # === 委托诉讼代理人区域 ===
+        # === 代理人区域 ===
         agent = parties.get('agent', {})
         if agent:
             has_agent = agent.get('has_agent', False)
             fields = {}
             checkboxes = {}
-            
             checkboxes['有'] = has_agent
             if not has_agent:
                 checkboxes['无'] = True
-            
             if has_agent:
                 if agent.get('name'):
                     fields['姓名：'] = agent['name']
@@ -275,7 +303,6 @@ class ElementLawsuitGenerator:
                     fields['职务：'] = agent['position']
                 if agent.get('phone'):
                     fields['联系电话：'] = agent['phone']
-                
                 authority = agent.get('authority', '')
                 if authority == '特别授权':
                     checkboxes['特别授权'] = True
@@ -283,93 +310,71 @@ class ElementLawsuitGenerator:
                     checkboxes['一般授权'] = True
                 else:
                     checkboxes['无'] = True
-            
             fill_data['section_fills'].append({
-                'section': '委托诉讼代理人',
+                'section': config['agent_section'],
                 'fields': fields,
                 'checkboxes': checkboxes,
             })
         
-        # === 诉讼请求区域（案由特定字段）===
+        # === 诉讼请求/答辩事项/赔偿请求区域 ===
         case_specific = extracted.get('case_specific', {})
-        if case_specific:
+        if case_specific and config.get('request_section'):
             request_fields = {}
-            reason_fields = {}
-            jurisdiction_fields = {}
-            
-            # 通用字段映射：提取数据key → 模板中的标签文本
             REQUEST_FIELD_MAP = {
-                '本金金额': '截至',
-                '利息金额': '截至',
-                '标的总额': '标的总额',
-                '诉讼请求概括': '诉讼请求',
+                '本金金额': '截至', '利息金额': '截至', '标的总额': '标的总额',
+                '诉讼请求概括': '诉讼请求', '答辩事项概括': '答辩事项',
+                '赔偿请求概括': '赔偿请求',
             }
-            
-            REASON_FIELD_MAP = {
-                '合同签订情况': '合同签订情况',
-                '出借人': '出借人',
-                '借款人': '借款人',
-                '约定借款金额': '约定',
-                '实际提供金额': '实际提供',
-                '约定期限': '约定期限',
-                '逾期时间': '逾期时间',
-                '已还本金': '已还本金',
-                '已还利息': '已还利息',
-                '请求依据合同约定': '合同约定',
-                '请求依据法律规定': '法律规定',
-                '事实与理由概括': '事实与理由',
-            }
-            
-            JURISDICTION_FIELD_MAP = {
-                '管辖约定': '合同条款及内容',
-            }
-            
             for key, label in REQUEST_FIELD_MAP.items():
                 if case_specific.get(key):
                     request_fields[label] = case_specific[key]
-            
-            for key, label in REASON_FIELD_MAP.items():
-                if case_specific.get(key):
-                    reason_fields[label] = case_specific[key]
-                    
-            for key, label in JURISDICTION_FIELD_MAP.items():
-                if case_specific.get(key):
-                    jurisdiction_fields[label] = case_specific[key]
-            
             if request_fields:
                 fill_data['section_fills'].append({
-                    'section': '诉讼请求',
+                    'section': config['request_section'],
                     'fields': request_fields,
                     'checkboxes': {},
                 })
-            
+        
+        # === 事实与理由区域 ===
+        if case_specific and config.get('reason_section'):
+            reason_fields = {}
+            REASON_FIELD_MAP = {
+                '合同签订情况': '合同签订情况', '出借人': '出借人', '借款人': '借款人',
+                '约定借款金额': '约定', '实际提供金额': '实际提供', '约定期限': '约定期限',
+                '逾期时间': '逾期时间', '已还本金': '已还本金', '已还利息': '已还利息',
+                '请求依据合同约定': '合同约定', '请求依据法律规定': '法律规定',
+                '事实与理由概括': '事实与理由',
+            }
+            for key, label in REASON_FIELD_MAP.items():
+                if case_specific.get(key):
+                    reason_fields[label] = case_specific[key]
             if reason_fields:
                 fill_data['section_fills'].append({
-                    'section': '事实与理由',
+                    'section': config['reason_section'],
                     'fields': reason_fields,
                     'checkboxes': {},
                 })
-            
-            if jurisdiction_fields:
-                fill_data['section_fills'].append({
-                    'section': '约定管辖和诉前保全',
-                    'fields': jurisdiction_fields,
-                    'checkboxes': {},
-                })
         
-        # === 勾选框操作（使用精确的 checkbox_ops）===
-        # 从提取的数据中构建精确勾选操作
-        checkbox_ops = self._build_checkbox_ops(extracted, case_type)
+        # === 约定管辖区域 ===
+        if case_specific and case_specific.get('管辖约定'):
+            fill_data['section_fills'].append({
+                'section': '约定管辖和诉前保全',
+                'fields': {'合同条款及内容：': case_specific['管辖约定']},
+                'checkboxes': {},
+            })
+        
+        # === 勾选框操作 ===
+        checkbox_ops = self._build_checkbox_ops(extracted, case_type, doc_type)
         fill_data['checkbox_ops'] = checkbox_ops
         
         # === 签名 ===
+        sig_label = config.get('signature_label', '具状人')
         if signature.get('signer'):
-            fill_data['text_replacements']['具状人（签字、盖章）：'] = \
-                f'具状人（签字、盖章）：{signature["signer"]}'
+            fill_data['text_replacements'][f'{sig_label}（签字、盖章）：'] = \
+                f'{sig_label}（签字、盖章）：{signature["signer"]}'
         
         return fill_data
-
-    def _build_checkbox_ops(self, extracted: Dict, case_type: str) -> List[Dict]:
+    def _build_checkbox_ops(self, extracted: Dict, case_type: str, doc_type: str = '民事起诉状') -> List[Dict]:
         """
         构建精确的勾选框操作
         
@@ -378,29 +383,44 @@ class ElementLawsuitGenerator:
         ops = []
         parties = extracted.get('parties', {})
         
-        # 原告性别勾选
+        # 根据文书类型确定当事人section名
+        DOC_TYPE_SECTIONS = {
+            '民事起诉状': ('原告', '被告'),
+            '民事答辩状': ('答辩人', None),
+            '刑事自诉状': ('自诉人', '被告人'),
+            '行政起诉状': ('原告', '被告'),
+            '国家赔偿申请书': ('赔偿请求人', None),
+            '刑事自诉答辩状': ('答辩人', None),
+            '行政答辩状': ('答辩人', None),
+            '国家赔偿答辩状': ('答辩人', None),
+            '第三人意见陈述书': ('第三人', None),
+        }
+        p1_section, p2_section = DOC_TYPE_SECTIONS.get(doc_type, ('原告', '被告'))
+        
+        # 当事人1性别勾选
         plaintiff = parties.get('plaintiff', {})
         if plaintiff and plaintiff.get('type') == 'natural':
             gender = plaintiff.get('gender', '')
             if gender:
                 ops.append({
-                    'section': '原告_自然人',
+                    'section': f'{p1_section}_自然人',
                     'paragraph_contains': '性别',
                     'before_checkbox': gender,
                     'check': True,
                 })
         
-        # 被告性别勾选
-        defendant = parties.get('defendant', {})
-        if defendant and defendant.get('type') == 'natural':
-            gender = defendant.get('gender', '')
-            if gender:
-                ops.append({
-                    'section': '被告_自然人',
-                    'paragraph_contains': '性别',
-                    'before_checkbox': gender,
-                    'check': True,
-                })
+        # 当事人2性别勾选
+        if p2_section:
+            defendant = parties.get('defendant', {})
+            if defendant and defendant.get('type') == 'natural':
+                gender = defendant.get('gender', '')
+                if gender:
+                    ops.append({
+                        'section': f'{p2_section}_自然人',
+                        'paragraph_contains': '性别',
+                        'before_checkbox': gender,
+                        'check': True,
+                    })
         
         # 根据案由添加特定勾选框
         if case_type == '民间借贷纠纷':

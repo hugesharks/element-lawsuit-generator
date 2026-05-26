@@ -88,6 +88,28 @@ class TemplateFiller:
         ns = NAMESPACES
         paragraphs = list(self.root.findall('.//w:p', ns))
         
+        # 可跟子类型（自然人/法人）的当事人标记
+        PERSON_MARKERS = {'原告', '被告', '第三人', '答辩人', '赔偿请求人', '申请人'}
+        # 独立自然人标记（无子类型行）
+        STANDALONE_NATURAL = {
+            '自诉人': '自诉人_自然人',
+            '被告人': '被告人_自然人',
+        }
+        # 代理人标记
+        AGENT_MARKERS = {
+            '委托诉讼代理人': '委托诉讼代理人',
+            '诉讼代理人': '诉讼代理人',
+            '辩护人': '辩护人',
+            '委托代理人': '委托代理人',
+        }
+        # 请求区域标记
+        REQUEST_MARKERS = ['诉讼请求', '答辩事项', '答辩意见', '赔偿请求']
+        # 组织/机关标记
+        ORG_MARKERS = {
+            '赔偿义务机关': '赔偿义务机关',
+            '复议机关': '复议机关',
+        }
+        
         section_map = {}
         current_section = None
         section_start = None
@@ -97,38 +119,50 @@ class TemplateFiller:
             
             # 检测区域边界
             new_section = None
-            if text == '原告':
-                new_section = '原告'
-            elif text == '（自然人）':
-                if current_section and current_section.startswith('原告'):
-                    new_section = '原告_自然人'
-                elif current_section and current_section.startswith('被告'):
-                    new_section = '被告_自然人'
-                elif current_section and current_section.startswith('第三人'):
-                    new_section = '第三人_自然人'
+            
+            # 子类型行：自然人/法人
+            if text == '（自然人）':
+                if current_section in PERSON_MARKERS:
+                    new_section = f'{current_section}_自然人'
+                elif current_section and current_section in STANDALONE_NATURAL:
+                    new_section = f'{current_section}_自然人'
             elif text == '（法人、非法人组织）':
-                if current_section and current_section.startswith('原告'):
-                    new_section = '原告_法人'
-                elif current_section and current_section.startswith('被告'):
-                    new_section = '被告_法人'
-                elif current_section and current_section.startswith('第三人'):
-                    new_section = '第三人_法人'
-            elif text == '被告':
-                new_section = '被告'
-            elif text == '第三人':
-                new_section = '第三人'
-            elif text == '委托诉讼代理人':
-                new_section = '委托诉讼代理人'
-            elif text.startswith('诉讼请求') or text == '诉讼请求':
-                new_section = '诉讼请求'
-            elif text.startswith('事实与理由') or text == '事实与理由':
-                new_section = '事实与理由'
-            elif text.startswith('约定管辖') or text.startswith('约定管辖和诉前保全'):
-                new_section = '约定管辖和诉前保全'
-            elif text.startswith('对纠纷解决方式的意愿'):
-                new_section = '对纠纷解决方式的意愿'
-            elif text == '当事人信息':
-                new_section = '_START_PARTIES'
+                if current_section in PERSON_MARKERS:
+                    new_section = f'{current_section}_法人'
+            elif text.startswith('（行政机关') or (text.startswith('（') and '行政机关' in text):
+                if current_section in PERSON_MARKERS:
+                    new_section = f'{current_section}_行政机关'
+            # 当事人标记
+            elif text in PERSON_MARKERS:
+                new_section = text
+            # 独立自然人标记
+            elif text in STANDALONE_NATURAL:
+                new_section = STANDALONE_NATURAL[text]
+            # 组织/机关标记
+            elif text in ORG_MARKERS:
+                new_section = ORG_MARKERS[text]
+            # 代理人标记
+            elif text in AGENT_MARKERS:
+                new_section = AGENT_MARKERS[text]
+            # 请求区域
+            else:
+                for marker in REQUEST_MARKERS:
+                    if text == marker or text.startswith(marker):
+                        new_section = marker
+                        break
+            
+            # 其他已知标记
+            if new_section is None:
+                if text.startswith('事实与理由') or text == '事实与理由':
+                    new_section = '事实与理由'
+                elif text.startswith('约定管辖') or text.startswith('约定管辖和诉前保全'):
+                    new_section = '约定管辖和诉前保全'
+                elif text.startswith('对纠纷解决方式的意愿'):
+                    new_section = '对纠纷解决方式的意愿'
+                elif text == '当事人信息':
+                    new_section = '_START_PARTIES'
+                elif text.startswith('法定代理人') or '代为告诉人' in text:
+                    new_section = '法定代理人或代为告诉人'
             
             if new_section == '_END_PARTIES':
                 # 结束当前区域
@@ -149,6 +183,16 @@ class TemplateFiller:
         # 最后一个区域
         if current_section and section_start is not None:
             section_map[current_section] = (section_start, len(paragraphs))
+        
+        # 后处理：无子类型的当事人标记自动加_自然人
+        sections_to_rename = {}
+        for section_name in list(section_map.keys()):
+            if section_name in PERSON_MARKERS:
+                has_subtype = any(s.startswith(section_name + '_') for s in section_map)
+                if not has_subtype:
+                    sections_to_rename[section_name] = f'{section_name}_自然人'
+        for old_name, new_name in sections_to_rename.items():
+            section_map[new_name] = section_map.pop(old_name)
         
         return section_map
 
