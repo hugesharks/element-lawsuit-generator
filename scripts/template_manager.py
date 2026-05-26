@@ -13,7 +13,11 @@ import urllib.parse
 from typing import Optional, List, Dict
 
 
-# GitHub仓库配置
+# 模板仓库配置（Gitee优先，GitHub备选）
+GITEE_REPO = "hugeshark/element-lawsuit-templates"
+GITEE_BRANCH = "main"
+GITEE_RAW_BASE = f"https://gitee.com/{GITEE_REPO}/raw/{GITEE_BRANCH}"
+
 GITHUB_REPO = "hugesharks/element-lawsuit-templates"
 GITHUB_BRANCH = "main"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
@@ -108,7 +112,10 @@ class TemplateManager:
         category_dir = CATEGORY_DIRS.get(category, '')
         
         if category_dir:
-            success = self._download_from_github(category_dir, filename)
+            # 优先从Gitee下载（国内速度快），失败则从GitHub下载
+            success = self._download_from_url(GITEE_RAW_BASE, category_dir, filename)
+            if not success:
+                success = self._download_from_url(GITHUB_RAW_BASE, category_dir, filename)
             if success and os.path.exists(cached_path):
                 return cached_path
         
@@ -117,18 +124,19 @@ class TemplateManager:
         
         return None
 
-    def _download_from_github(self, category_dir: str, filename: str) -> bool:
+    def _download_from_url(self, base_url: str, category_dir: str, filename: str) -> bool:
         """
-        从GitHub下载模板
+        从指定URL下载模板（支持Gitee和GitHub）
         
         Args:
+            base_url: 仓库raw文件基础URL
             category_dir: 分类目录名（如"03-合同纠纷"）
             filename: 文件名（如"民事起诉状-民间借贷纠纷.docx"）
         """
         # URL编码中文路径
         encoded_category = urllib.parse.quote(category_dir)
         encoded_filename = urllib.parse.quote(filename)
-        url = f"{GITHUB_RAW_BASE}/templates/{encoded_category}/{encoded_filename}"
+        url = f"{base_url}/templates/{encoded_category}/{encoded_filename}"
         
         cached_path = os.path.join(self.cache_dir, filename)
         temp_path = cached_path + '.tmp'
@@ -222,19 +230,36 @@ class TemplateManager:
                         result["failed"] += 1
                         result["errors"].append(f"复制 {f} 失败: {e}")
         else:
-            # 从GitHub下载所有分类下的模板
+            # 从远程下载所有分类下的模板（Gitee优先，GitHub备选）
             for category_dir in CATEGORY_DIRS.values():
                 try:
                     encoded_category = urllib.parse.quote(category_dir)
-                    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/templates/{encoded_category}"
-                    req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        import json
-                        files = json.loads(resp.read().decode('utf-8'))
+                    # 优先用Gitee API，失败则用GitHub API
+                    api_urls = [
+                        f"https://gitee.com/api/v5/repos/{GITEE_REPO}/contents/templates/{encoded_category}",
+                        f"https://api.github.com/repos/{GITHUB_REPO}/contents/templates/{encoded_category}",
+                    ]
+                    files = None
+                    for api_url in api_urls:
+                        try:
+                            req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+                            with urllib.request.urlopen(req, timeout=15) as resp:
+                                import json
+                                files = json.loads(resp.read().decode('utf-8'))
+                            break
+                        except Exception:
+                            continue
+                    
+                    if not files:
+                        result["errors"].append(f"列出 {category_dir} 目录失败: 所有源均不可用")
+                        continue
                     
                     for file_info in files:
                         if file_info['name'].endswith('.docx'):
-                            success = self._download_from_github(category_dir, file_info['name'])
+                            # 优先Gitee，失败则GitHub
+                            success = self._download_from_url(GITEE_RAW_BASE, category_dir, file_info['name'])
+                            if not success:
+                                success = self._download_from_url(GITHUB_RAW_BASE, category_dir, file_info['name'])
                             if success:
                                 result["success"] += 1
                             else:
