@@ -1,3 +1,14 @@
+---
+name: element-lawsuit-generator
+description: "要素式文书一键生成 - 上传普通诉讼文书自动识别案由匹配模板输出规范要素式文书。支持11大领域58个案由104份模板，区域定位精确填充，勾选框智能处理。"
+dependency:
+  python:
+  - python-docx>=0.8.11
+  - PyMuPDF>=1.23.0
+  - Pillow>=10.0.0
+  - pytesseract>=0.3.10
+---
+
 # 要素式文书一键生成 Skill
 
 ## 概述
