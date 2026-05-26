@@ -531,75 +531,183 @@ class ContentExtractor:
         return result
 
     def _extract_parties_traditional(self, text: str, doc_type: str) -> Dict:
-        """从传统文书中提取当事人信息"""
+        """从传统文书中提取当事人信息，支持所有文书类型的角色名"""
         parties = {}
         
-        # 原告信息 - 从"原告：张三，男，..."这种格式提取
-        plaintiff_patterns = [
-            r'原告[：:]\s*([^\s,，\n（(]{2,10})[，,\s]+(男|女)[，,\s]*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*出生[，,\s]*([^\s,，\n]+?)\s*族',
-            r'原告[：:]\s*([^\s,，\n（(]{2,10})',
-        ]
+        # 文书类型→角色名映射：party1对应内部plaintiff，party2对应内部defendant
+        ROLE_MAP = {
+            '民事起诉状': ('原告', '被告'),
+            '民事答辩状': ('答辩人', None),  # 答辩人即原被告之一
+            '刑事自诉状': ('自诉人', '被告人'),
+            '刑事自诉答辩状': ('答辩人', None),
+            '行政起诉状': ('原告', '被告'),
+            '行政答辩状': ('答辩人', None),
+            '国家赔偿申请书': ('赔偿请求人', '赔偿义务机关'),
+            '国家赔偿答辩状': ('答辩人', None),
+            '第三人意见陈述书': ('第三人', None),
+        }
         
-        for pattern in plaintiff_patterns:
-            m = re.search(pattern, text)
-            if m:
-                plaintiff = {'type': 'natural'}
-                plaintiff['name'] = m.group(1).strip()
-                if len(m.groups()) >= 2:
-                    plaintiff['gender'] = m.group(2)
-                if len(m.groups()) >= 6:
-                    plaintiff['birthdate'] = f"{m.group(3)} 年 {m.group(4)} 月 {m.group(5)} 日"
-                    plaintiff['ethnicity'] = m.group(6)
-                
-                # 尝试提取更多字段
-                plaintiff_text = text[m.start():min(m.start() + 300, len(text))]
-                
-                phone_m = re.search(r'(?:联系电话|电话|联系方式)[：:]\s*([0-9\-]+)', plaintiff_text)
-                if phone_m:
-                    plaintiff['phone'] = phone_m.group(1)
-                
-                id_m = re.search(r'(?:身份证号码?|证件号码?)[：:]\s*(\d{17}[\dXx])', plaintiff_text)
-                if id_m:
-                    plaintiff['id_number'] = id_m.group(1)
-                
-                addr_m = re.search(r'(?:住所地|住址|地址|住)[：:]\s*(.+?)(?:\n|，|。|$)', plaintiff_text)
-                if addr_m:
-                    plaintiff['address'] = addr_m.group(1).strip()
-                
-                parties['plaintiff'] = plaintiff
-                break
+        # 自动从文本推断角色名（如果doc_type没给出或不匹配）
+        role1_name, role2_name = ROLE_MAP.get(doc_type, (None, None))
+        if not role1_name:
+            role1_name, role2_name = self._infer_roles_from_text(text)
         
-        # 被告信息
-        defendant_patterns = [
-            r'被告[：:]\s*([^\s,，\n（(]{2,10})[，,\s]+(男|女)',
-            r'被告[：:]\s*([^\s,，\n（(]{2,10})',
-        ]
+        # 提取party1（plaintiff）
+        if role1_name:
+            party1 = self._extract_person_by_role(text, role1_name)
+            if party1:
+                parties['plaintiff'] = party1
         
-        for pattern in defendant_patterns:
-            m = re.search(pattern, text)
-            if m:
-                defendant = {'type': 'natural'}
-                defendant['name'] = m.group(1).strip()
-                if len(m.groups()) >= 2:
-                    defendant['gender'] = m.group(2)
-                
-                defendant_text = text[m.start():min(m.start() + 300, len(text))]
-                phone_m = re.search(r'(?:联系电话|电话|联系方式)[：:]\s*([0-9\-]+)', defendant_text)
-                if phone_m:
-                    defendant['phone'] = phone_m.group(1)
-                
-                id_m = re.search(r'(?:身份证号码?|证件号码?)[：:]\s*(\d{17}[\dXx])', defendant_text)
-                if id_m:
-                    defendant['id_number'] = id_m.group(1)
-                
-                addr_m = re.search(r'(?:住所地|住址|地址|住)[：:]\s*(.+?)(?:\n|，|。|$)', defendant_text)
-                if addr_m:
-                    defendant['address'] = addr_m.group(1).strip()
-                
-                parties['defendant'] = defendant
-                break
+        # 提取party2（defendant）
+        if role2_name:
+            party2 = self._extract_person_by_role(text, role2_name)
+            if party2:
+                parties['defendant'] = party2
+        
+        # 兜底：如果plaintiff没提取到，尝试所有已知角色名
+        if 'plaintiff' not in parties:
+            for role in ['原告', '答辩人', '自诉人', '赔偿请求人', '第三人', '申请人', '陈述人']:
+                party = self._extract_person_by_role(text, role)
+                if party:
+                    parties['plaintiff'] = party
+                    break
+        
+        # 兜底：如果defendant没提取到且有对应角色名
+        if 'defendant' not in parties:
+            for role in ['被告', '被告人', '赔偿义务机关', '复议机关']:
+                party = self._extract_person_by_role(text, role)
+                if party:
+                    parties['defendant'] = party
+                    break
         
         return parties
+    
+    def _infer_roles_from_text(self, text: str) -> Tuple:
+        """从文本内容推断角色名"""
+        ROLE_KEYWORDS = {
+            '答辩人': ['民事答辩状', '刑事自诉答辩状', '行政答辩状', '国家赔偿答辩状', '答辩意见', '答辩事项'],
+            '自诉人': ['刑事自诉状', '自诉状'],
+            '赔偿请求人': ['国家赔偿申请', '赔偿请求人', '赔偿义务机关'],
+            '第三人': ['第三人意见', '意见陈述书'],
+        }
+        
+        for role, keywords in ROLE_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text:
+                    if role == '答辩人':
+                        return ('答辩人', None)
+                    elif role == '自诉人':
+                        return ('自诉人', '被告人')
+                    elif role == '赔偿请求人':
+                        return ('赔偿请求人', '赔偿义务机关')
+                    elif role == '第三人':
+                        return ('第三人', None)
+        
+        return ('原告', '被告')
+    
+    def _extract_person_by_role(self, text: str, role_name: str) -> Optional[Dict]:
+        """按角色名提取当事人信息（自然人/法人自动判断）"""
+        # 法人/组织特征关键词
+        LEGAL_KEYWORDS = ['有限公司', '股份有限公司', '集团', '公司', '银行', '保险', '局', '委员会', 
+                          '法院', '政府', '机关', '所', '协会', '联合会', '知识产权局']
+        
+        # 完整格式：角色名：张三，男，1985年3月12日出生，汉族...
+        pattern_full = re.compile(
+            rf'{re.escape(role_name)}[：:]\s*([^\s,，\n（(]{{2,30}})[，,\s]+(男|女)[，,\s]*(\d{{4}})\s*年\s*(\d{{1,2}})\s*月\s*(\d{{1,2}})\s*日\s*出生[，,\s]*([^\s,，\n]+?)\s*族'
+        )
+        m = pattern_full.search(text)
+        if m:
+            person = {'type': 'natural'}
+            person['name'] = m.group(1).strip()
+            person['gender'] = m.group(2)
+            person['birthdate'] = f"{m.group(3)} 年 {m.group(4)} 月 {m.group(5)} 日"
+            person['ethnicity'] = m.group(6)
+            self._fill_extra_fields(person, text, m.start())
+            return person
+        
+        # 简短自然人格式：角色名：张三，男，...
+        pattern_short = re.compile(
+            rf'{re.escape(role_name)}[：:]\s*([^\s,，\n（(]{{2,10}})[，,\s]+(男|女)'
+        )
+        m = pattern_short.search(text)
+        if m:
+            person = {'type': 'natural'}
+            person['name'] = m.group(1).strip()
+            person['gender'] = m.group(2)
+            self._fill_extra_fields(person, text, m.start())
+            return person
+        
+        # 法人/组织格式：角色名：XX有限公司，住所地：...
+        pattern_legal = re.compile(
+            rf'{re.escape(role_name)}[：:]\s*([^\n，,]+?)(?:[，,]\s*住所地[：:]|\.?\s*$|\n)'
+        )
+        m = pattern_legal.search(text)
+        if m:
+            name = m.group(1).strip()
+            # 判断是否是法人/组织
+            is_legal = any(kw in name for kw in LEGAL_KEYWORDS)
+            if is_legal:
+                person = {'type': 'legal'}
+                person['name'] = name
+                # 提取法人额外信息
+                person_text = text[m.start():min(m.start() + 500, len(text))]
+                addr_m = re.search(r'住所地[：:]\s*(.+?)(?:\n|，|。|$)', person_text)
+                if addr_m:
+                    person['address'] = addr_m.group(1).strip()
+                lp_m = re.search(r'法定代表人[/\s]*(?:负责人)?[：:]\s*(.+?)(?:\n|，|。|$|联系电话)', person_text)
+                if lp_m:
+                    person['legal_person'] = lp_m.group(1).strip()
+                phone_m = re.search(r'联系电话[：:]\s*([0-9\-]+)', person_text)
+                if phone_m:
+                    person['phone'] = phone_m.group(1)
+                return person
+            else:
+                # 简单名称格式（只有名字，后面直接跟住址等）
+                person = {'type': 'natural'}
+                person['name'] = name.rstrip('，,')
+                self._fill_extra_fields(person, text, m.start())
+                return person
+        
+        # 最简格式：角色名：名称（可能只有名字）
+        pattern_min = re.compile(
+            rf'{re.escape(role_name)}[：:]\s*([^\n]+?)(?:\n|$)'
+        )
+        m = pattern_min.search(text)
+        if m:
+            raw = m.group(1).strip()
+            name = raw.split('，')[0].split(',')[0].strip()
+            if len(name) >= 2:
+                is_legal = any(kw in name for kw in LEGAL_KEYWORDS)
+                person = {'type': 'legal' if is_legal else 'natural'}
+                person['name'] = name
+                self._fill_extra_fields(person, text, m.start())
+                return person
+        
+        return None
+    
+    def _fill_extra_fields(self, person: Dict, text: str, start_pos: int):
+        """填充当事人的额外字段"""
+        person_text = text[start_pos:min(start_pos + 400, len(text))]
+        
+        phone_m = re.search(r'(?:联系电话|电话|联系方式)[：:]\s*([0-9\-]+)', person_text)
+        if phone_m:
+            person['phone'] = phone_m.group(1)
+        
+        id_m = re.search(r'(?:身份证号码?|证件号码?)[：:]\s*(\d{17}[\dXx])', person_text)
+        if id_m:
+            person['id_number'] = id_m.group(1)
+        
+        addr_m = re.search(r'(?:住所地|住址|地址|住)[：:]\s*(.+?)(?:\n|，|。|$)', person_text)
+        if addr_m:
+            person['address'] = addr_m.group(1).strip()
+        
+        work_m = re.search(r'(?:工作单位|单位)[：:]\s*(.+?)(?:\n|，|职务|$)', person_text)
+        if work_m:
+            person['work_unit'] = work_m.group(1).strip()
+        
+        pos_m = re.search(r'职务[：:]\s*(.+?)(?:\n|，|联系电话|$)', person_text)
+        if pos_m:
+            person['position'] = pos_m.group(1).strip()
 
     def _extract_case_specific_traditional(self, text: str, case_type: str) -> Dict:
         """从传统文书中提取案由特定字段"""
@@ -614,13 +722,27 @@ class ContentExtractor:
         return extractor(text)
 
     def _extract_signature_traditional(self, text: str) -> Dict:
-        """从传统文书中提取签名"""
+        """从传统文书中提取签名，支持所有文书类型的签名标签"""
         signature = {}
         
-        m = re.search(r'(?:具状人|起诉人|申请人)[（(]签字、盖章[）)][：:]\s*(.+?)(?:\n|$)', text)
+        # 所有可能的签名标签
+        sig_labels = [
+            '具状人', '起诉人', '申请人', '答辩人', '赔偿请求人',
+            '陈述人', '自诉人', '赔偿请求人',
+        ]
+        sig_pattern = r'(?:' + '|'.join(re.escape(l) for l in sig_labels) + r')[（(]签字、盖章[）)][：:]\s*(.+?)(?:\n|$)'
+        m = re.search(sig_pattern, text)
         if m:
             signature['signer'] = m.group(1).strip()
         
+        # 也尝试无括号的格式
+        if 'signer' not in signature:
+            sig_pattern2 = r'(?:' + '|'.join(re.escape(l) for l in sig_labels) + r')[（(]签字[）)][：:]\s*(.+?)(?:\n|$)'
+            m = re.search(sig_pattern2, text)
+            if m:
+                signature['signer'] = m.group(1).strip()
+        
+        # 日期
         m = re.search(r'(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*$', text.strip())
         if m:
             signature['date'] = f"{m.group(1)} 年 {m.group(2)} 月 {m.group(3)} 日"

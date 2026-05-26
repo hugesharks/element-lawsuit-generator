@@ -97,7 +97,25 @@ class CaseClassifier:
         return (best_case[0], round(confidence, 2))
 
     def _classify_doc_type(self, text: str) -> Tuple[str, float]:
-        """识别文书类型"""
+        """识别文书类型，优先匹配文书标题中的类型名"""
+        # 第一步：直接从文书标题匹配（最可靠）
+        # 常见标题格式："民事答辩状"、"刑事自诉状（侮辱案）"等
+        title_patterns = [
+            (r'刑事自诉答辩状', '刑事自诉答辩状'),
+            (r'国家赔偿答辩状', '国家赔偿答辩状'),
+            (r'行政答辩状', '行政答辩状'),
+            (r'民事答辩状', '民事答辩状'),
+            (r'第三人意见陈述书', '第三人意见陈述书'),
+            (r'国家赔偿申请书', '国家赔偿申请书'),
+            (r'刑事自诉状', '刑事自诉状'),
+            (r'行政起诉状', '行政起诉状'),
+            (r'民事起诉状', '民事起诉状'),
+        ]
+        for pattern, doc_type in title_patterns:
+            if re.search(pattern, text):
+                return (doc_type, 0.95)
+        
+        # 第二步：关键词评分（无明确标题时）
         scores = {}
         
         for doc_type, keywords in self.doc_type_keywords.items():
@@ -124,7 +142,25 @@ class CaseClassifier:
         else:
             confidence = 1.0
         
+        # 第三步：根据案由的category修正文书类型
+        # 如果关键词评分不确定，用案由category推断
+        if confidence < 0.6:
+            case_type, _ = self._classify_case(text)
+            category = self.get_category(case_type)
+            inferred = self._infer_doc_type_from_case(category)
+            if inferred != '未知':
+                return (inferred, 0.7)
+        
         return (best_type[0], round(confidence, 2))
+    
+    def _infer_doc_type_from_case(self, category: str) -> str:
+        """根据案由分类推断文书类型（默认推断起诉/申请类）"""
+        category_map = {
+            '01-刑事自诉': '刑事自诉状',
+            '08-行政纠纷': '行政起诉状',
+            '09-国家赔偿': '国家赔偿申请书',
+        }
+        return category_map.get(category, '未知')
 
     def get_template_filename(self, case_type: str, doc_type: str) -> Optional[str]:
         """
