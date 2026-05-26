@@ -119,8 +119,14 @@ class TemplateFiller:
                 new_section = '第三人'
             elif text == '委托诉讼代理人':
                 new_section = '委托诉讼代理人'
-            elif text.startswith('诉讼请求'):
-                new_section = '_END_PARTIES'
+            elif text.startswith('诉讼请求') or text == '诉讼请求':
+                new_section = '诉讼请求'
+            elif text.startswith('事实与理由') or text == '事实与理由':
+                new_section = '事实与理由'
+            elif text.startswith('约定管辖') or text.startswith('约定管辖和诉前保全'):
+                new_section = '约定管辖和诉前保全'
+            elif text.startswith('对纠纷解决方式的意愿'):
+                new_section = '对纠纷解决方式的意愿'
             elif text == '当事人信息':
                 new_section = '_START_PARTIES'
             

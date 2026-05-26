@@ -290,6 +290,73 @@ class ElementLawsuitGenerator:
                 'checkboxes': checkboxes,
             })
         
+        # === 诉讼请求区域（案由特定字段）===
+        case_specific = extracted.get('case_specific', {})
+        if case_specific:
+            request_fields = {}
+            reason_fields = {}
+            jurisdiction_fields = {}
+            
+            # 通用字段映射：提取数据key → 模板中的标签文本
+            REQUEST_FIELD_MAP = {
+                '本金金额': '截至',
+                '利息金额': '截至',
+                '标的总额': '标的总额',
+                '诉讼请求概括': '诉讼请求',
+            }
+            
+            REASON_FIELD_MAP = {
+                '合同签订情况': '合同签订情况',
+                '出借人': '出借人',
+                '借款人': '借款人',
+                '约定借款金额': '约定',
+                '实际提供金额': '实际提供',
+                '约定期限': '约定期限',
+                '逾期时间': '逾期时间',
+                '已还本金': '已还本金',
+                '已还利息': '已还利息',
+                '请求依据合同约定': '合同约定',
+                '请求依据法律规定': '法律规定',
+                '事实与理由概括': '事实与理由',
+            }
+            
+            JURISDICTION_FIELD_MAP = {
+                '管辖约定': '合同条款及内容',
+            }
+            
+            for key, label in REQUEST_FIELD_MAP.items():
+                if case_specific.get(key):
+                    request_fields[label] = case_specific[key]
+            
+            for key, label in REASON_FIELD_MAP.items():
+                if case_specific.get(key):
+                    reason_fields[label] = case_specific[key]
+                    
+            for key, label in JURISDICTION_FIELD_MAP.items():
+                if case_specific.get(key):
+                    jurisdiction_fields[label] = case_specific[key]
+            
+            if request_fields:
+                fill_data['section_fills'].append({
+                    'section': '诉讼请求',
+                    'fields': request_fields,
+                    'checkboxes': {},
+                })
+            
+            if reason_fields:
+                fill_data['section_fills'].append({
+                    'section': '事实与理由',
+                    'fields': reason_fields,
+                    'checkboxes': {},
+                })
+            
+            if jurisdiction_fields:
+                fill_data['section_fills'].append({
+                    'section': '约定管辖和诉前保全',
+                    'fields': jurisdiction_fields,
+                    'checkboxes': {},
+                })
+        
         # === 勾选框操作（使用精确的 checkbox_ops）===
         # 从提取的数据中构建精确勾选操作
         checkbox_ops = self._build_checkbox_ops(extracted, case_type)
