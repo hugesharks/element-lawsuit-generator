@@ -94,9 +94,12 @@ dependency:
 
 ## 模板来源
 
-模板文件依据《最高人民法院 司法部 中华全国律师协会关于印发部分案件起诉状答辩状示范文本的通知》（法〔2025〕82号）文件中的示范文本，存放于 GitHub 仓库：https://github.com/hugesharks/element-lawsuit-templates
+模板文件依据《最高人民法院 司法部 中华全国律师协会关于印发部分案件起诉状答辩状示范文本的通知》（法〔2025〕82号）文件中的示范文本，存放于以下仓库：
 
-模板按 11 个领域分类存放，首次使用时会自动下载到本地缓存。也可指定本地模板目录跳过下载。
+- **Gitee（国内优先）**：https://gitee.com/hugeshark/element-lawsuit-templates
+- **GitHub（备选）**：https://github.com/hugesharks/element-lawsuit-templates
+
+模板按 11 个领域分类存放，首次使用时自动从 Gitee 下载（国内速度快），Gitee 不可用时自动切换 GitHub。下载成功后缓存到本地，后续使用无需重复下载。也可指定本地模板目录跳过下载。
 
 ## 安全与隐私
 
