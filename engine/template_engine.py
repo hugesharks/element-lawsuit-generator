@@ -376,19 +376,26 @@ class BookmarkEngine:
         return None
     
     def add_bookmarks_to_row(self, table_index: int, row_index: int,
-                              bookmark_prefix: str, field_names: list[str]) -> None:
+                              bookmark_prefix: str, field_names: list[str],
+                              cell_index: int = None) -> None:
         """
-        给指定行的各个单元格打书签
+        给指定行的单元格打书签
         
         Args:
             table_index: 表格索引
             row_index: 行索引
             bookmark_prefix: 书签前缀，如 "T3_01"
             field_names: 字段名列表，如 ["原告姓名", "原告性别", "原告出生日期"]
+            cell_index: 目标单元格索引。None=默认行为（每个field映射到一个cell）;
+                       指定时所有field都插入到同一个cell（适用于Cell 0是标签、
+                       Cell 1是可填内容的结构，如劳动争议模板的T1/T2区）
             
         示例:
-            engine.add_bookmarks_to_row(3, 0, "T3_01", ["姓名", "性别", "年龄"])
-            # 生成书签：T3_01_姓名, T3_01_性别, T3_01_年龄
+            # 默认模式（交通事故T2区）：每field一个cell
+            engine.add_bookmarks_to_row(2, 3, "T2_03", ["医疗费"])
+            
+            # 指定cell模式（劳动争议T1区）：所有field插入Cell 1
+            engine.add_bookmarks_to_row(1, 3, "T1_02", ["工资支付明细"], cell_index=1)
         """
         tables = list(self._root.iter(f'{W}tbl'))
         if table_index >= len(tables):
@@ -400,10 +407,98 @@ class BookmarkEngine:
             raise IndexError(f"行索引超出范围: {row_index}")
         
         row = rows[row_index]
-        self._insert_bookmarks_to_cloned_row(row, bookmark_prefix, field_names)
+        self._insert_bookmarks_to_cloned_row(row, bookmark_prefix, field_names, cell_index)
     
+
+    def add_bookmarks_to_cell_paragraphs(self, table_index: int, row_index: int,
+                                          cell_index: int, bookmark_prefix: str,
+                                          field_names: list[str],
+                                          paragraph_indices: list[int] = None) -> None:
+        """
+        给指定单元格的各个段落打书签（保留标签文本，在标签后面插入书签）
+        
+        适用于一个单元格包含多个段落的情况，如：
+        - T0行2原告信息：姓名、性别、出生日期等分别在不同段落
+        - T0行3委托代理人：姓名、单位、职务等分别在不同段落
+        
+        填充后效果示例：
+        - 空白：姓名：
+        - 填充：姓名：张三
+        
+        Args:
+            table_index: 表格索引
+            row_index: 行索引
+            cell_index: 单元格索引
+            bookmark_prefix: 书签前缀，如 "T0_01"
+            field_names: 字段名列表，按段落顺序对应
+            paragraph_indices: 段落索引列表（可选）。指定时field_names[i]插入到
+                              paragraph_indices[i]段落；不指定时按顺序映射
+                              （field_names[i] → paragraphs[i]）
+        """
+        tables = list(self._root.iter(f'{W}tbl'))
+        if table_index >= len(tables):
+            raise IndexError(f"表格索引超出范围: {table_index}")
+        
+        table = tables[table_index]
+        rows = list(table.iter(f'{W}tr'))
+        if row_index >= len(rows):
+            raise IndexError(f"行索引超出范围: {row_index}")
+        
+        row = rows[row_index]
+        cells = list(row.iter(f'{W}tc'))
+        if cell_index >= len(cells):
+            raise IndexError(f"单元格索引超出范围: {cell_index}")
+        
+        cell = cells[cell_index]
+        paragraphs = list(cell.iter(f'{W}p'))
+        
+        for i, field_name in enumerate(field_names):
+            # 确定目标段落索引
+            if paragraph_indices is not None:
+                if i >= len(paragraph_indices):
+                    break
+                para_idx = paragraph_indices[i]
+            else:
+                para_idx = i
+            
+            if para_idx >= len(paragraphs):
+                break
+            
+            paragraph = paragraphs[para_idx]
+            
+            # 获取段落中所有run
+            runs = list(paragraph.iter(f'{W}r'))
+            if not runs:
+                # 没有run元素，创建一个
+                run = ET.SubElement(paragraph, f'{W}r')
+                t_elem = ET.SubElement(run, f'{W}t')
+                t_elem.text = ''
+                runs = [run]
+            
+            # 书签名称
+            bookmark_name = f"{bookmark_prefix}_{field_name}"
+            
+            # 生成书签ID（需要唯一）
+            bookmark_id = abs(hash(bookmark_name)) % 100000
+            
+            # 创建bookmarkStart
+            bm_start = ET.Element(f'{W}bookmarkStart')
+            bm_start.set(f'{{{NAMESPACES["w"]}}}id', str(bookmark_id))
+            bm_start.set('name', bookmark_name)
+            
+            # 创建bookmarkEnd
+            bm_end = ET.Element(f'{W}bookmarkEnd')
+            bm_end.set(f'{{{NAMESPACES["w"]}}}id', str(bookmark_id))
+            
+            # 在最后一个run后面插入：bookmarkStart + bookmarkEnd
+            last_run = runs[-1]
+            last_run_index = list(paragraph).index(last_run)
+            paragraph.insert(last_run_index + 1, bm_start)
+            paragraph.insert(last_run_index + 2, bm_end)
+
     def _insert_bookmarks_to_cloned_row(self, row: ET.Element, prefix: str,
-                                         field_names: list[str]):
+                                         field_names: list[str],
+                                         cell_index: int = None):
         """
         给clone出来的行打书签
         
@@ -415,43 +510,28 @@ class BookmarkEngine:
             row: 行元素
             prefix: 书签前缀
             field_names: 字段名列表
+            cell_index: 目标单元格索引。None=每个field映射到一个cell;
+                       指定时所有field都插入到同一个cell
         """
         cells = list(row.iter(f'{W}tc'))
         
         for i, field_name in enumerate(field_names):
-            if i >= len(cells):
-                break
-            
-            cell = cells[i]
+            if cell_index is not None:
+                # 指定cell模式：所有field插入同一个cell
+                if cell_index >= len(cells):
+                    break
+                cell = cells[cell_index]
+            else:
+                # 默认模式：每个field映射到一个cell
+                if i >= len(cells):
+                    break
+                cell = cells[i]
             paragraphs = list(cell.iter(f'{W}p'))
             if not paragraphs:
                 # 没有段落，创建一个
                 paragraph = ET.SubElement(cell, f'{W}p')
             else:
                 paragraph = paragraphs[0]
-            
-            # 清空第一个段落所有run的文本（保留run元素和样式属性）
-            # 原因：模板行可能含标签文本（如"3. 营养费"），不清空会导致
-            # 填充后出现"营养费3. 营养费"叠加。
-            # 注意：只清第一个段落！多段落单元格（如T0/T1当事人信息）的
-            # 后续段落含其他字段，由 clear_cell_extra_paragraphs 单独处理。
-            for run in paragraph.iter(f'{W}r'):
-                for t_elem in run.iter(f'{W}t'):
-                    t_elem.text = ''
-            
-            runs = list(paragraph.iter(f'{W}r'))
-            if not runs:
-                # 没有run元素，创建一个
-                run = ET.SubElement(paragraph, f'{W}r')
-                t_elem = ET.SubElement(run, f'{W}t')
-                t_elem.text = ''
-            else:
-                run = runs[0]
-                t_elem = list(run.iter(f'{W}t'))
-                if not t_elem:
-                    t_elem = ET.SubElement(run, f'{W}t')
-                else:
-                    t_elem = t_elem[0]
             
             # 书签名称
             bookmark_name = f"{prefix}_{field_name}"
@@ -468,13 +548,44 @@ class BookmarkEngine:
             bm_end = ET.Element(f'{W}bookmarkEnd')
             bm_end.set(f'{{{NAMESPACES["w"]}}}id', str(bookmark_id))
             
-            # 插入位置
-            run_index = list(paragraph).index(run)
-            paragraph.insert(run_index, bm_start)
-            paragraph.insert(run_index + 2, bm_end)
-            
-            # 设置占位符文本
-            t_elem.text = f'{{{bookmark_name}}}'
+            if cell_index is not None:
+                # 指定cell模式：保留原有文本（如勾选框、"明细："），在末尾追加书签
+                # 适用于劳动争议T1/T2区，Cell 0是标签、Cell 1是可填内容
+                runs = list(paragraph.iter(f'{W}r'))
+                if runs:
+                    # 在最后一个run后面插入书签
+                    last_run = runs[-1]
+                    last_run_index = list(paragraph).index(last_run)
+                    paragraph.insert(last_run_index + 1, bm_start)
+                    paragraph.insert(last_run_index + 2, bm_end)
+                else:
+                    # 没有run，直接在段落末尾插入
+                    paragraph.append(bm_start)
+                    paragraph.append(bm_end)
+            else:
+                # 默认模式：清空文本 + 插入书签占位符
+                # 适用于模板标签需要被替换的场景（如交通事故T2赔偿项）
+                for run in paragraph.iter(f'{W}r'):
+                    for t_elem in run.iter(f'{W}t'):
+                        t_elem.text = ''
+                
+                runs = list(paragraph.iter(f'{W}r'))
+                if not runs:
+                    run = ET.SubElement(paragraph, f'{W}r')
+                    t_elem = ET.SubElement(run, f'{W}t')
+                    t_elem.text = ''
+                else:
+                    run = runs[0]
+                    t_elem = list(run.iter(f'{W}t'))
+                    if not t_elem:
+                        t_elem = ET.SubElement(run, f'{W}t')
+                    else:
+                        t_elem = t_elem[0]
+                
+                run_index = list(paragraph).index(run)
+                paragraph.insert(run_index, bm_start)
+                paragraph.insert(run_index + 2, bm_end)
+                t_elem.text = f'{{{bookmark_name}}}'
     
     def clear_cell_extra_paragraphs(self, table_index: int, row_index: int,
                                      cell_index: int) -> None:

@@ -827,18 +827,25 @@ class LaborDisputeAdapter(CaseAdapter):
         
         # === 表格0：当事人信息 ===
         # 原告信息
+        # 原告信息 - 与模板段落结构匹配
+        # 段落0: 姓名
         fill_map['T0_01_原告姓名'] = case_data.get('plaintiff_name', '')
-        fill_map['T0_02_原告性别'] = case_data.get('plaintiff_gender', '')
-        fill_map['T0_03_原告出生日期'] = case_data.get('plaintiff_birthdate', '')
-        fill_map['T0_04_原告民族'] = case_data.get('plaintiff_ethnicity', '')
-        fill_map['T0_05_原告工作单位'] = case_data.get('plaintiff_work_unit', '')
-        fill_map['T0_06_原告职务'] = case_data.get('plaintiff_position', '')
-        fill_map['T0_07_原告联系电话'] = case_data.get('plaintiff_phone', '')
-        fill_map['T0_08_原告住所地'] = case_data.get('plaintiff_address', '')
-        fill_map['T0_09_原告经常居住地'] = case_data.get('plaintiff_residence', '')
-        fill_map['T0_10_原告证件类型'] = '居民身份证'
-        fill_map['T0_11_原告证件号码'] = case_data.get('plaintiff_id_number', '')
+        # 段落1: 性别（勾选框处理）
+        # 段落2: 出生日期+民族（需要特殊处理）
+        # 段落3: 工作单位+职务+联系电话（需要特殊处理）
+        # 段落4: 住所地
+        fill_map['T0_02_原告住所地'] = case_data.get('plaintiff_address', '')
+        # 段落5: 经常居住地
+        fill_map['T0_03_原告经常居住地'] = case_data.get('plaintiff_residence', '')
+        # 段落6: 证件类型
+        fill_map['T0_04_原告证件类型'] = '居民身份证'
+        # 段落7: 证件号码
+        fill_map['T0_05_原告证件号码'] = case_data.get('plaintiff_id_number', '')
         
+        # 多字段段落需要特殊处理（在测试脚本中手动插入书签）
+        # 段落2: 出生日期+民族
+        # 段落3: 工作单位+职务+联系电话
+        # 这些字段需要在测试脚本中手动处理
         # 委托代理人
         if case_data.get('has_agent'):
             fill_map['T0_12_代理人姓名'] = case_data.get('agent_name', '')
@@ -879,7 +886,7 @@ class LaborDisputeAdapter(CaseAdapter):
         if case_data.get('other_claims'):
             fill_map['T1_15_其他诉讼请求'] = case_data.get('other_claims', '')
         if case_data.get('total_amount'):
-            fill_map['T1_16_标的总额'] = str(case_data['total_amount'])
+            fill_map['T1_16_标的总额'] = str(int(case_data['total_amount']))
         
         # === 表格2：事实与理由 ===
         # 诉前保全
