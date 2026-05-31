@@ -760,7 +760,8 @@ class BookmarkEngine:
                     )
 
                     if should_check is True:
-                        new_text = new_text[:pos] + '■' + new_text[pos+1:]
+                        # 原模板用□(U+25A1)表示未勾选，勾选后用☐(U+2610)
+                        new_text = new_text[:pos] + '☐' + new_text[pos+1:]
                         replaced_count += 1
 
                 if new_text != text:
@@ -816,9 +817,9 @@ class BookmarkEngine:
         for t_elem in text_nodes:
             text = t_elem.text
             
-            # 替换"是□"为"是■"
+            # 替换"是□"为"是☐"（勾选后用☐ U+2610）
             if '是□' in text:
-                t_elem.text = text.replace('是□', '是■')
+                t_elem.text = text.replace('是□', '是☐')
                 continue
             
             # 保全法院：纯空格文本节点 → 替换为法院名
