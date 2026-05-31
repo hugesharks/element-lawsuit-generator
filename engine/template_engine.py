@@ -858,6 +858,8 @@ class BookmarkEngine:
         - "性别：男□" → "男"
         - "是□" → "是"
         - "全责□" → "全责"
+        - "无此问题□" → "无此问题"
+        - "有此问题□" → "有此问题"
         - "暂不确定，想要了解更多内容□" → "暂不确定，想要了解更多内容"
         """
         text = text.rstrip()
@@ -871,17 +873,35 @@ class BookmarkEngine:
         if not text:
             return ''
 
-        # 取最后一个"词"——按常见分隔符切分
-        # 先尝试取最后2个字（覆盖"全责""了解"等）
+        # 多字符选项优先（按长度递减尝试匹配）
+        known_multi = [
+            '暂不确定，想要了解更多内容',
+            '无此问题',
+            '有此问题',
+            '离婚经济帮助',
+            '离婚经济补偿',
+            '离婚损害赔偿',
+            '了解先行调解',
+            '全责', '主责', '同责', '次责', '无责',
+            '了解', '国有', '控股', '参股', '民营',
+        ]
+        
+        for option in sorted(known_multi, key=len, reverse=True):
+            if text.endswith(option):
+                return option
+        
+        # 单字符选项（最常见）
+        one_char = text[-1:]
+        known_one = ['男', '女', '有', '无', '是', '否', '告', '他', '题', '偿', '助', '产', '务', '容', '权']
+        if one_char in known_one:
+            return one_char
+
+        # 取最后两个字作为后备
         if len(text) >= 2:
             two_char = text[-2:]
-            known_two = ['全责', '主责', '同责', '次责', '无责',
-                          '了解', '国有', '控股', '参股', '民营',
-                          '有□', '无□']  # 有□无□不会到这里，因为□已被剥离
-            if two_char in known_two:
-                return two_char
-
-        # 取最后一个字
+            return two_char
+        
+        # 最后取一个字
         return text[-1:]
 
     def _match_checkbox(self, option_label: str, table_idx: int,
