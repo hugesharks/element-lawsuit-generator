@@ -130,6 +130,7 @@ class BookmarkEngine:
         
         查找书签的bookmarkStart和bookmarkEnd，
         删除之间的所有内容，在bookmarkStart后插入新内容
+        新run继承bookmarkStart前一个run的rPr（颜色、字间距等），保持样式一致
         
         Args:
             bookmark_name: 书签名称
@@ -156,8 +157,20 @@ class BookmarkEngine:
         for elem in elements_to_remove:
             parent.remove(elem)
         
+        # 从bookmarkStart之前的run中获取rPr（格式属性），用于新run继承样式
+        ref_rpr = None
+        for i in range(start_idx - 1, -1, -1):
+            if children[i].tag == f'{W}r':
+                rpr = children[i].find(f'{W}rPr')
+                if rpr is not None:
+                    ref_rpr = copy.deepcopy(rpr)
+                break
+        
         # 创建新的run元素填充内容
         new_run = self._create_run_with_text(content)
+        # 继承参考run的格式（颜色、字间距等），保持视觉一致性
+        if ref_rpr is not None:
+            new_run.insert(0, ref_rpr)
         # 在bookmarkEnd之前插入
         insert_idx = list(parent).index(bm_end)
         parent.insert(insert_idx, new_run)
