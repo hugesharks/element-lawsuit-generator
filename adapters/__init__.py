@@ -6,5 +6,7 @@
 """
 
 from .base import CaseAdapter
+from .traffic_accident import TrafficAccidentAdapter
+from .labor_dispute import LaborDisputeAdapter
 
-__all__ = ["CaseAdapter"]
+__all__ = ["CaseAdapter", "TrafficAccidentAdapter", "LaborDisputeAdapter"]
